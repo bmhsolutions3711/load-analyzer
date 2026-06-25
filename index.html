@@ -236,13 +236,17 @@ const live = { needle:null, countRAF:0, vt:null };
 // ── Connection (backend URL + token) ──────────────────────────────────────
 function loopback(u){ try{ return /^(localhost|127\.0\.0\.1)$/.test(new URL(u).hostname);}catch{ return false; } }
 (function ingestHash(){
-  const h = new URLSearchParams(location.hash.slice(1));
-  if (location.hash.includes('reset')){ localStorage.clear();
+  const raw = location.hash.slice(1);
+  if (raw.includes('reset')){ localStorage.clear();
     if (navigator.serviceWorker) navigator.serviceWorker.getRegistrations().then(r=>r.forEach(x=>x.unregister()));
-    location.hash=''; }
-  if (h.get('api')) localStorage.setItem('fwla_api', h.get('api'));
-  if (h.get('token')) localStorage.setItem('fwla_token', h.get('token'));
-  if (h.get('api')) history.replaceState(null,'',location.pathname);
+    location.hash=''; return; }
+  const h = new URLSearchParams(raw);
+  let api, tok;
+  if (h.get('cfg')){ try{ const c = JSON.parse(decodeURIComponent(h.get('cfg'))); api = c.api; tok = c.token; }catch(e){} }
+  api = api || h.get('api'); tok = tok || h.get('token');
+  if (api) localStorage.setItem('fwla_api', api);
+  if (tok) localStorage.setItem('fwla_token', tok);
+  if (api || tok) history.replaceState(null,'',location.pathname);
 })();
 function backend(){
   let u = localStorage.getItem('fwla_api');
