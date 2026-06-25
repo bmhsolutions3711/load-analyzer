@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0f0f0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Load Analyzer</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+/* ── INSTRUMENT — FleetWorks Load Analyzer ───────────────────────────────────
+   Governing metaphor: a co-pilot's hand lands on the yoke and calls the load
+   with you — one needle swings, overshoots, locks, names the binding limit. */
+:root{
+  --color-bg:#0f0f0f; --color-bg-soft:#141414; --color-panel:#1a1a1a;
+  --color-panel-2:#222; --color-elevated:#2a2a2a;
+  --color-fg:#e5e7eb; --color-fg-dim:#b0b0b0; --color-fg-muted:#9ca3af; --color-fg-subtle:#6b7280;
+  --color-border:#262626; --color-border-bright:#333;
+  --color-success:#22c55e; --color-warn:#e5b524; --color-danger:#ef4444; --color-primary:#e5b524;
+  --glow-primary:0 0 24px rgba(229,181,36,.18);
+  --shadow-md:0 4px 12px rgba(0,0,0,.5);
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --d-fast:180ms; --d-normal:320ms; --d-slow:600ms;
+  --ease-out:cubic-bezier(.16,1,.3,1); --ease-spring:cubic-bezier(.34,1.56,.64,1);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  background:var(--color-bg); color:var(--color-fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  display:flex; justify-content:center;
+  padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom));
+}
+.fwla{width:100%; max-width:480px; display:flex; flex-direction:column; min-height:100%}
+.fwla-head{display:flex; align-items:center; justify-content:space-between; padding:2px 4px 8px}
+.fwla-head h1{font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--color-fg-muted); font-weight:600; margin:0}
+.fwla-gear{background:none;border:none;color:var(--color-fg-subtle);font-size:16px;cursor:pointer;padding:4px}
+
+/* ── Verdict card (the instrument) ───────────────────────────────────────── */
+.fwla-card{
+  position:relative; border:1px solid var(--color-border); border-radius:20px;
+  background:var(--color-panel); box-shadow:var(--shadow-md);
+  padding:20px; overflow:hidden; flex:1; display:flex; flex-direction:column;
+  --verdict:transparent;
+}
+@property --verdictMix{syntax:'<color>';inherits:true;initial-value:transparent}
+.fwla-card::before{ /* the wash */
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:0;
+  background:radial-gradient(ellipse 120% 80% at 50% -10%, var(--fwla-wash,transparent) 0%, transparent 60%);
+  transition:opacity var(--d-slow) var(--ease-out);
+}
+.fwla-card.is-bid    {--verdict:var(--color-success)}
+.fwla-card.is-caution{--verdict:var(--color-warn)}
+.fwla-card.is-pass   {--verdict:var(--color-danger)}
+.fwla-card[class*="is-"]{--fwla-wash:color-mix(in oklab, var(--verdict) 16%, transparent)}
+@supports not (background:color-mix(in oklab,red,blue)){
+  .fwla-card[class*="is-"]{border-color:var(--verdict)}
+}
+.fwla-card>*{position:relative; z-index:1}
+
+/* ── Gauge ───────────────────────────────────────────────────────────────── */
+.fwla-gaugewrap{display:flex; flex-direction:column; align-items:center; padding-top:6px}
+.fwla-gauge{--size:min(72vw,300px); width:var(--size); aspect-ratio:2/1; position:relative; overflow:hidden}
+.fwla-gauge__arc{
+  position:absolute; inset:0; width:100%; aspect-ratio:1; border-radius:50%;
+  background:conic-gradient(from 270deg,
+    var(--color-danger) 0deg 60deg, var(--color-warn) 60deg 120deg,
+    var(--color-success) 120deg 180deg, transparent 180deg);
+  -webkit-mask:radial-gradient(circle at 50% 100%, transparent 58%, #000 58.5% 78%, transparent 78.5%);
+          mask:radial-gradient(circle at 50% 100%, transparent 58%, #000 58.5% 78%, transparent 78.5%);
+  opacity:.28; transition:opacity var(--d-normal) var(--ease-out);
+}
+.fwla-card[class*="is-"] .fwla-gauge__arc{opacity:1}
+.fwla-gauge__glass{ /* specular hairline — curved instrument glass */
+  position:absolute; inset:0; width:100%; aspect-ratio:1; border-radius:50%;
+  background:linear-gradient(160deg, rgba(255,255,255,.08), transparent 42%);
+  -webkit-mask:radial-gradient(circle at 50% 100%, transparent 58%, #000 58.5% 78%, transparent 78.5%);
+          mask:radial-gradient(circle at 50% 100%, transparent 58%, #000 58.5% 78%, transparent 78.5%);
+  pointer-events:none;
+}
+.fwla-gauge__needle{
+  position:absolute; bottom:0; left:calc(50% - 1.5px); width:3px; height:46%;
+  transform-origin:50% 100%; rotate:0deg; border-radius:3px;
+  background:var(--color-fg-subtle); transition:background var(--d-normal);
+}
+.fwla-card[class*="is-"] .fwla-gauge__needle{background:var(--color-fg)}
+.fwla-gauge__hub{
+  position:absolute; bottom:-5px; left:calc(50% - 6px); width:12px; height:12px; border-radius:50%;
+  background:var(--color-elevated); border:1px solid var(--color-border-bright);
+}
+
+/* ── Readout ─────────────────────────────────────────────────────────────── */
+.fwla-readout{font-size:40px; font-weight:700; line-height:1; margin-top:6px;
+  font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; color:var(--color-fg)}
+.fwla-card.is-bid    .fwla-readout{color:var(--color-success)}
+.fwla-card.is-caution .fwla-readout{color:var(--color-fg)}
+.fwla-card.is-pass   .fwla-readout{color:var(--color-danger)}
+.fwla-readout.is-empty{color:var(--color-fg-subtle); font-size:22px; font-weight:600}
+.fwla-unit{font-size:12px; color:var(--color-fg-muted); letter-spacing:.06em; margin-top:2px; text-transform:uppercase}
+
+/* ── Binding chip ────────────────────────────────────────────────────────── */
+.fwla-chip{
+  display:inline-flex; align-items:center; gap:6px; margin-top:16px; align-self:center;
+  padding:7px 14px; border-radius:999px; border:1px solid var(--verdict,var(--color-border));
+  background:var(--color-panel-2); color:var(--color-fg);
+  font-size:12px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
+  max-width:100%; text-align:center;
+}
+.fwla-card[class*="is-"] .fwla-chip.show{box-shadow:0 0 0 1px var(--verdict), 0 0 18px color-mix(in oklab,var(--verdict) 28%, transparent)}
+.fwla-chip{opacity:0; transform:translateY(6px) scale(.92)}
+.fwla-chip.show{animation:fwla-bind var(--d-normal) var(--ease-spring) both; animation-delay:340ms}
+@keyframes fwla-bind{0%{opacity:0;transform:translateY(6px) scale(.92)}60%{transform:translateY(0) scale(1.04)}100%{opacity:1;transform:scale(1)}}
+
+/* ── Source ribbon + weather (subordinate) ───────────────────────────────── */
+.fwla-meta{margin-top:auto; padding-top:18px; display:flex; flex-direction:column; gap:8px}
+.fwla-ribbon{font-family:var(--font-mono); font-size:12px; color:var(--color-fg-subtle);
+  background:var(--color-panel-2); border:1px solid var(--color-border); border-radius:10px;
+  padding:8px 10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; display:none}
+.fwla-ribbon.show{display:block}
+.fwla-ribbon.expanded{white-space:pre-wrap}
+.fwla-weather{display:flex; gap:8px; flex-wrap:wrap}
+.fwla-wchip{font-size:11px; color:var(--color-fg-muted); background:var(--color-bg-soft);
+  border:1px solid var(--color-border); border-radius:8px; padding:5px 9px; font-variant-numeric:tabular-nums}
+.fwla-wchip.warn{color:var(--color-warn); border-color:var(--color-warn)}
+
+/* ── Paste-well + analyze (bottom thumb-arc) ─────────────────────────────── */
+.fwla-input{margin-top:16px; position:relative}
+.fwla-paste{
+  width:100%; min-height:96px; resize:none; border-radius:14px;
+  background:var(--color-bg-soft); border:1px solid var(--color-border);
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.45);
+  color:var(--color-fg); font-family:var(--font-mono); font-size:14px; line-height:1.5; padding:12px 14px;
+  transition:border-color var(--d-fast), box-shadow var(--d-fast);
+}
+.fwla-paste::placeholder{color:var(--color-fg-subtle)}
+.fwla-paste:focus{outline:none; border-color:var(--color-primary); box-shadow:inset 0 2px 6px rgba(0,0,0,.45), var(--glow-primary)}
+.fwla-paste.idle{animation:fwla-breath 4s ease-in-out infinite}
+@keyframes fwla-breath{0%,100%{opacity:1}50%{opacity:.92}}
+.fwla-scan{position:absolute; inset:1px; border-radius:14px; pointer-events:none; overflow:hidden; opacity:0}
+.fwla-scan.run{opacity:1}
+.fwla-scan::after{content:""; position:absolute; top:0; bottom:0; width:40%;
+  background:linear-gradient(90deg, transparent, rgba(229,181,36,.22), transparent); transform:translateX(-120%)}
+.fwla-scan.run::after{animation:fwla-scanmove .32s var(--ease-out) 1}
+@keyframes fwla-scanmove{to{transform:translateX(320%)}}
+.fwla-go{
+  width:100%; margin-top:10px; padding:15px; border:none; border-radius:14px;
+  background:var(--color-primary); color:#1a1400; font-size:16px; font-weight:700; letter-spacing:.02em;
+  cursor:pointer; transition:filter var(--d-fast), transform var(--d-fast);
+}
+.fwla-go:active{transform:scale(.985)}
+.fwla-go:disabled{filter:saturate(.4) brightness(.7); cursor:default}
+.fwla-err{color:var(--color-danger); font-size:13px; margin-top:8px; text-align:center; min-height:16px}
+
+/* ── Connect sheet ───────────────────────────────────────────────────────── */
+.fwla-sheet{position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-end; justify-content:center; z-index:50}
+.fwla-sheet.show{display:flex}
+.fwla-sheet__panel{width:100%; max-width:480px; background:var(--color-panel); border:1px solid var(--color-border);
+  border-radius:18px 18px 0 0; padding:18px 18px max(18px,env(safe-area-inset-bottom))}
+.fwla-sheet input{width:100%; margin:6px 0 12px; padding:11px; border-radius:10px; border:1px solid var(--color-border);
+  background:var(--color-bg-soft); color:var(--color-fg); font-family:var(--font-mono); font-size:13px}
+.fwla-sheet label{font-size:11px; color:var(--color-fg-muted); text-transform:uppercase; letter-spacing:.08em}
+.fwla-sheet button{width:100%; padding:13px; border:none; border-radius:12px; background:var(--color-primary); color:#1a1400; font-weight:700; cursor:pointer}
+
+/* burst (BID payoff) */
+.fwla-burst{position:absolute; top:0; left:0; width:6px; height:6px; border-radius:50%; background:var(--color-success); pointer-events:none; z-index:2}
+
+/* visibility pause */
+.fwla-hidden *{animation-play-state:paused !important}
+
+@media (prefers-reduced-motion: reduce){
+  .fwla-paste.idle{animation:none}
+  .fwla-chip.show{animation:none; opacity:1; transform:none}
+  .fwla-scan{display:none}
+}
+@media (max-width:380px){ .fwla-readout{font-size:34px} .fwla-gauge{--size:78vw} }
+</style>
+</head>
+<body>
+<div class="fwla" id="app">
+  <div class="fwla-head">
+    <h1>Load Analyzer</h1>
+    <button class="fwla-gear" id="gear" aria-label="Connect settings">⚙</button>
+  </div>
+
+  <div class="fwla-card" id="card">
+    <div class="fwla-gaugewrap">
+      <div class="fwla-gauge" role="img" aria-label="Go/no-go gauge">
+        <div class="fwla-gauge__arc"></div>
+        <div class="fwla-gauge__glass"></div>
+        <div class="fwla-gauge__needle" id="needle"></div>
+        <div class="fwla-gauge__hub"></div>
+      </div>
+      <div class="fwla-readout is-empty" id="readout" aria-live="polite">Paste a load</div>
+      <div class="fwla-unit" id="unit"></div>
+      <div class="fwla-chip" id="chip" style="visibility:hidden">—</div>
+    </div>
+
+    <div class="fwla-meta">
+      <div class="fwla-weather" id="weather"></div>
+      <div class="fwla-ribbon" id="ribbon"></div>
+    </div>
+
+    <div class="fwla-input">
+      <textarea class="fwla-paste idle" id="paste" placeholder="Paste the FleetWorks offer…" autocomplete="off" spellcheck="false"></textarea>
+      <div class="fwla-scan" id="scan"></div>
+      <button class="fwla-go" id="go">Call it</button>
+      <div class="fwla-err" id="err"></div>
+    </div>
+  </div>
+</div>
+
+<!-- iOS haptic engine -->
+<input type="checkbox" switch id="hap" hidden>
+<label for="hap" id="hapLabel" aria-hidden="true" style="position:fixed;opacity:0;pointer-events:none"></label>
+
+<div class="fwla-sheet" id="sheet">
+  <div class="fwla-sheet__panel">
+    <label>Backend URL</label>
+    <input id="apiInput" placeholder="https://…ts.net or http://127.0.0.1:8530" autocomplete="off">
+    <label>Token (blank for loopback)</label>
+    <input id="tokInput" placeholder="LOAD_ANALYZER_TOKEN" autocomplete="off">
+    <button id="saveConn">Save & connect</button>
+  </div>
+</div>
+
+<script>
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const SPRING = 'linear(0,.006,.025,.101,.225 19%,.4,.582,.75,.879,.962,.999 50%,1.01,1.012,1.006,1.001,1)';
+const TARGET = { PASS:-54, CAUTION:0, BID:54 };
+const $ = s => document.querySelector(s);
+const live = { needle:null, countRAF:0, vt:null };
+
+// ── Connection (backend URL + token) ──────────────────────────────────────
+function loopback(u){ try{ return /^(localhost|127\.0\.0\.1)$/.test(new URL(u).hostname);}catch{ return false; } }
+(function ingestHash(){
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (location.hash.includes('reset')){ localStorage.clear();
+    if (navigator.serviceWorker) navigator.serviceWorker.getRegistrations().then(r=>r.forEach(x=>x.unregister()));
+    location.hash=''; }
+  if (h.get('api')) localStorage.setItem('fwla_api', h.get('api'));
+  if (h.get('token')) localStorage.setItem('fwla_token', h.get('token'));
+  if (h.get('api')) history.replaceState(null,'',location.pathname);
+})();
+function backend(){
+  let u = localStorage.getItem('fwla_api');
+  if (!u && loopback(location.href)) u = location.origin.includes('8530') ? location.origin : 'http://127.0.0.1:8530';
+  return u || '';
+}
+function token(){ return localStorage.getItem('fwla_token') || ''; }
+
+// ── Settings sheet ────────────────────────────────────────────────────────
+$('#gear').onclick = ()=>{ $('#apiInput').value = backend(); $('#tokInput').value = token(); $('#sheet').classList.add('show'); };
+$('#sheet').onclick = e=>{ if(e.target===$('#sheet')) $('#sheet').classList.remove('show'); };
+$('#saveConn').onclick = ()=>{
+  localStorage.setItem('fwla_api', $('#apiInput').value.trim().replace(/\/$/,''));
+  localStorage.setItem('fwla_token', $('#tokInput').value.trim());
+  $('#sheet').classList.remove('show');
+};
+
+// ── Haptics + payoff ──────────────────────────────────────────────────────
+function haptic(){ if(RM) return; if(navigator.vibrate) navigator.vibrate(10); else $('#hapLabel').click(); }
+function burst(){
+  if(RM) return; const card=$('#card'), gx=card.clientWidth/2, gy=70;
+  for(let i=0;i<14;i++){ const s=document.createElement('span'); s.className='fwla-burst';
+    const ang=Math.PI*(0.15+0.7*Math.random()), dist=60+Math.random()*70;
+    s.style.left=gx+'px'; s.style.top=gy+'px';
+    s.animate([{transform:'translate(0,0) scale(1)',opacity:1},
+      {transform:`translate(${Math.cos(ang)*dist*(Math.random()<.5?-1:1)}px,${-Math.sin(ang)*dist}px) scale(0)`,opacity:0}],
+      {duration:600,easing:'cubic-bezier(.16,1,.3,1)'}).onfinish=()=>s.remove();
+    card.appendChild(s);
+  }
+}
+
+// ── The Verdict Swing ─────────────────────────────────────────────────────
+function teardown(){
+  live.needle?.cancel(); cancelAnimationFrame(live.countRAF); live.vt?.skipTransition?.();
+  document.querySelectorAll('.fwla-burst').forEach(n=>n.remove());
+}
+function swingTo(v){
+  live.needle?.cancel(); const deg = TARGET[v] ?? 0;
+  if(RM){ $('#needle').style.rotate = deg+'deg'; return Promise.resolve(); }
+  live.needle = $('#needle').animate([{rotate:'0deg'},{rotate:deg+'deg'}],
+    {duration:560, easing:SPRING, fill:'forwards'});
+  return live.needle.finished;
+}
+function countTo(el, value, ms=520){
+  cancelAnimationFrame(live.countRAF);
+  const fmt = x => '$'+x.toFixed(2);
+  if(RM || !isFinite(value)){ el.textContent = isFinite(value)?fmt(value):'—'; return; }
+  const t0 = performance.now();
+  const tick = t => { const p = Math.min(1,(t-t0)/ms);
+    el.textContent = fmt(value*(1-Math.pow(1-p,3)));
+    if(p<1) live.countRAF = requestAnimationFrame(tick); };
+  live.countRAF = requestAnimationFrame(tick);
+}
+function reveal(render){
+  if(!document.startViewTransition || RM){ render(); return; }
+  live.vt = document.startViewTransition(render);
+}
+
+// ── Render a verdict ──────────────────────────────────────────────────────
+function render(r){
+  const card=$('#card'), v=r.verdict, ec=r.economics, ex=r.extracted;
+  card.classList.remove('is-bid','is-caution','is-pass');
+  card.classList.add('is-'+v.toLowerCase());
+
+  // readout: net $/total-mi after fuel (state-first — set before animating)
+  const net = ec.net_rpm_after_fuel;
+  const ro = $('#readout'); ro.classList.remove('is-empty');
+  ro.textContent = '$'+Number(net).toFixed(2);
+  $('#unit').textContent = '/ total mi · after fuel';
+
+  // binding chip (exactly one)
+  const chip=$('#chip'); chip.textContent = r.binding_limit; chip.style.visibility='visible';
+  chip.classList.remove('show'); void chip.offsetWidth; chip.classList.add('show');
+
+  // source ribbon (the receipt)
+  const ribbon=$('#ribbon');
+  ribbon.textContent = `${ex.pickup} → ${ex.drop} · ${ex.weight_lb.toLocaleString()} lb · $${Math.round(ex.rate_usd)} · ${ec.total_mi} mi`;
+  ribbon.dataset.full = $('#paste').value;
+  ribbon.classList.add('show'); ribbon.classList.remove('expanded');
+
+  // weather chips
+  const w=$('#weather'); w.innerHTML='';
+  const add=(t,warn)=>{ if(!t) return; const e=document.createElement('span'); e.className='fwla-wchip'+(warn?' warn':''); e.textContent=t; w.appendChild(e); };
+  add(r.route.weather_pickup ? '↑ '+r.route.weather_pickup : '', /⚠/.test(r.route.weather_pickup||''));
+  add(r.route.weather_drop ? '↓ '+r.route.weather_drop : '', /⚠/.test(r.route.weather_drop||''));
+  (r.route.severe||[]).forEach(s=>add('⚠ '+s,true));
+
+  // choreograph: needle locks, count finishes on settle, payoff
+  swingTo(v).then(()=>{ haptic(); if(v==='BID') burst(); });
+  countTo(ro, Number(net));
+}
+
+$('#ribbon').onclick = e=>{ const r=e.currentTarget; r.classList.toggle('expanded');
+  r.textContent = r.classList.contains('expanded') ? (r.dataset.full||r.textContent) :
+    r.textContent; if(r.classList.contains('expanded')) r.textContent=r.dataset.full; };
+
+// ── Analyze ───────────────────────────────────────────────────────────────
+async function getGPS(){
+  if(!navigator.geolocation) return {};
+  return new Promise(res=>{ navigator.geolocation.getCurrentPosition(
+    p=>res({current_lat:p.coords.latitude, current_lon:p.coords.longitude}),
+    ()=>res({}), {timeout:4000, maximumAge:120000}); });
+}
+async function analyze(){
+  const text=$('#paste').value.trim(); const err=$('#err'); err.textContent='';
+  if(!text){ err.textContent='Paste a load first.'; return; }
+  const api=backend();
+  if(!api){ err.textContent='Tap ⚙ to connect a backend.'; $('#sheet').classList.add('show'); return; }
+  teardown();
+  $('#go').disabled=true; $('#go').textContent='Reading…';
+  $('#paste').classList.remove('idle');
+  if(!RM){ const sc=$('#scan'); sc.classList.add('run'); setTimeout(()=>sc.classList.remove('run'),360); }
+  try{
+    const gps=await getGPS();
+    const headers={'Content-Type':'application/json'};
+    if(token() && !loopback(api)) headers['Authorization']='Bearer '+token();
+    const resp=await fetch(api+'/api/analyze',{method:'POST',headers,body:JSON.stringify({text,...gps})});
+    const r=await resp.json();
+    if(r.error){ err.textContent=r.error; return; }
+    reveal(()=>render(r));
+  }catch(e){ err.textContent='Could not reach the backend. Check ⚙ connection.'; }
+  finally{ $('#go').disabled=false; $('#go').textContent='Call it'; }
+}
+$('#go').onclick=analyze;
+$('#paste').addEventListener('focus',()=>$('#paste').classList.remove('idle'));
+$('#paste').addEventListener('blur',()=>{ if(!$('#paste').value) $('#paste').classList.add('idle'); });
+
+document.addEventListener('visibilitychange',()=>document.body.classList.toggle('fwla-hidden',document.hidden));
+
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
