@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0f0f0f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Load Analyzer</title>
+<title>Load Call</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
@@ -154,6 +154,51 @@ body{
 .fwla-go:disabled{filter:saturate(.4) brightness(.7); cursor:default}
 .fwla-err{color:var(--color-danger); font-size:13px; margin-top:8px; text-align:center; min-height:16px}
 
+/* ── Starting-from (deadhead origin / free-point) ─────────────────────────── */
+.fwla-origin{display:flex; align-items:center; gap:6px; margin-bottom:10px;
+  background:var(--color-bg-soft); border:1px solid var(--color-border); border-radius:12px; padding:5px 7px}
+.fwla-origin__icon{font-size:13px; opacity:.85; padding-left:2px}
+.fwla-origin__field{flex:1; min-width:0; background:none; border:none; color:var(--color-fg);
+  font-family:var(--font-mono); font-size:13px; padding:6px 2px}
+.fwla-origin__field:focus{outline:none}
+.fwla-origin__field::placeholder{color:var(--color-fg-subtle)}
+.fwla-origin__btn{flex:none; border:1px solid var(--color-border-bright); background:var(--color-panel-2);
+  color:var(--color-fg-dim); font-size:11px; font-weight:600; letter-spacing:.03em; text-transform:uppercase;
+  border-radius:8px; padding:6px 9px; cursor:pointer; white-space:nowrap; transition:transform var(--d-fast)}
+.fwla-origin__btn:active{transform:scale(.95)}
+.fwla-origin__btn.on{background:var(--color-primary); color:#1a1400; border-color:var(--color-primary)}
+
+/* ── Ranked board list (multi-load) ───────────────────────────────────────── */
+.fwla-back{display:none; align-self:flex-start; background:none; border:none; color:var(--color-fg-subtle);
+  font-size:12px; font-weight:600; letter-spacing:.04em; cursor:pointer; padding:0 0 8px}
+.fwla-back.show{display:block}
+.fwla-list{display:none; flex-direction:column; gap:8px}
+.fwla-card.is-list .fwla-gaugewrap,
+.fwla-card.is-list .fwla-meta{display:none}
+.fwla-card.is-list .fwla-list{display:flex}
+.fwla-listhead{display:flex; justify-content:space-between; align-items:center; padding:0 2px 2px;
+  font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--color-fg-subtle)}
+.fwla-row{display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  background:var(--color-panel-2); border:1px solid var(--color-border); border-left:3px solid var(--color-border);
+  border-radius:12px; padding:10px 12px; cursor:pointer; color:var(--color-fg);
+  transition:border-color var(--d-fast), transform var(--d-fast)}
+.fwla-row:active{transform:scale(.99)}
+.fwla-row.is-bid{border-left-color:var(--color-success)}
+.fwla-row.is-caution{border-left-color:var(--color-warn)}
+.fwla-row.is-pass{border-left-color:var(--color-danger)}
+.fwla-row__dot{flex:none; width:9px; height:9px; border-radius:50%; background:var(--color-fg-subtle)}
+.fwla-row.is-bid .fwla-row__dot{background:var(--color-success)}
+.fwla-row.is-caution .fwla-row__dot{background:var(--color-warn)}
+.fwla-row.is-pass .fwla-row__dot{background:var(--color-danger)}
+.fwla-row__main{flex:1; min-width:0; display:flex; flex-direction:column; gap:3px}
+.fwla-row__route{font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.fwla-row__bind{font-size:11px; color:var(--color-fg-muted); font-family:var(--font-mono);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.fwla-row__rate{flex:none; font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; text-align:right; line-height:1.05}
+.fwla-row.is-bid .fwla-row__rate{color:var(--color-success)}
+.fwla-row.is-pass .fwla-row__rate{color:var(--color-danger)}
+.fwla-row__rate small{display:block; font-size:9px; font-weight:500; color:var(--color-fg-subtle); letter-spacing:.03em; text-transform:uppercase}
+
 /* ── Connect sheet ───────────────────────────────────────────────────────── */
 .fwla-sheet{position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-end; justify-content:center; z-index:50}
 .fwla-sheet.show{display:flex}
@@ -181,11 +226,13 @@ body{
 <body>
 <div class="fwla" id="app">
   <div class="fwla-head">
-    <h1>Load Analyzer</h1>
+    <h1>Load Call</h1>
     <button class="fwla-gear" id="gear" aria-label="Connect settings">⚙</button>
   </div>
 
   <div class="fwla-card" id="card">
+    <button class="fwla-back" id="back">‹ board</button>
+    <div class="fwla-list" id="list"></div>
     <div class="fwla-gaugewrap">
       <div class="fwla-gauge" role="img" aria-label="Go/no-go gauge">
         <div class="fwla-gauge__arc"></div>
@@ -204,7 +251,13 @@ body{
     </div>
 
     <div class="fwla-input">
-      <textarea class="fwla-paste idle" id="paste" placeholder="Paste the FleetWorks offer…" autocomplete="off" spellcheck="false"></textarea>
+      <div class="fwla-origin">
+        <span class="fwla-origin__icon">📍</span>
+        <input id="origin" class="fwla-origin__field" placeholder="Starting from — GPS or type your drop" autocomplete="off" spellcheck="false">
+        <button id="gpsBtn" class="fwla-origin__btn" title="Use my current location">GPS</button>
+        <button id="curLoadBtn" class="fwla-origin__btn" title="Use my current load's drop">On a run</button>
+      </div>
+      <textarea class="fwla-paste idle" id="paste" placeholder="Paste the FleetWorks board or a single offer…" autocomplete="off" spellcheck="false"></textarea>
       <div class="fwla-scan" id="scan"></div>
       <button class="fwla-go" id="go">Call it</button>
       <div class="fwla-err" id="err"></div>
@@ -232,6 +285,9 @@ const SPRING = 'linear(0,.006,.025,.101,.225 19%,.4,.582,.75,.879,.962,.999 50%,
 const TARGET = { PASS:-54, CAUTION:0, BID:54 };
 const $ = s => document.querySelector(s);
 const live = { needle:null, countRAF:0, vt:null };
+let gpsCoords = null;                 // [lat,lon] set by the GPS button
+let boardLoads = [], boardOrigin = null;  // last multi-load board
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // ── Connection (backend URL + token) ──────────────────────────────────────
 function loopback(u){ try{ return /^(localhost|127\.0\.0\.1)$/.test(new URL(u).hostname);}catch{ return false; } }
@@ -323,8 +379,9 @@ function render(r){
 
   // source ribbon (the receipt)
   const ribbon=$('#ribbon');
-  ribbon.textContent = `${ex.pickup} → ${ex.drop} · ${ex.weight_lb.toLocaleString()} lb · $${Math.round(ex.rate_usd)} · ${ec.total_mi} mi`;
-  ribbon.dataset.full = $('#paste').value;
+  const wlb = Number(ex.weight_lb)||0;
+  ribbon.textContent = `${ex.pickup||'?'} → ${ex.drop||'?'} · ${wlb.toLocaleString()} lb · $${Math.round(Number(ex.rate_usd)||0)} · ${ec.total_mi||0} mi`;
+  ribbon.dataset.full = r.raw_text || $('#paste').value;
   ribbon.classList.add('show'); ribbon.classList.remove('expanded');
 
   // weather chips
@@ -343,6 +400,72 @@ $('#ribbon').onclick = e=>{ const r=e.currentTarget; r.classList.toggle('expande
   r.textContent = r.classList.contains('expanded') ? (r.dataset.full||r.textContent) :
     r.textContent; if(r.classList.contains('expanded')) r.textContent=r.dataset.full; };
 
+// ── Ranked board list (multi-load) ────────────────────────────────────────
+function renderList(loads, origin){
+  boardLoads = loads; boardOrigin = origin;
+  const card=$('#card'); card.classList.remove('is-bid','is-caution','is-pass');
+  card.classList.add('is-list'); $('#back').classList.remove('show');
+  const list=$('#list'); list.innerHTML='';
+  const head=document.createElement('div'); head.className='fwla-listhead';
+  const from = origin && origin.label ? origin.label : 'GPS';
+  head.innerHTML = `<span>${loads.length} loads · best first</span><span>from ${esc(from)}</span>`;
+  list.appendChild(head);
+  loads.forEach((l,i)=>{
+    const ec=l.economics||{}, ex=l.extracted||{};
+    const row=document.createElement('button');
+    row.className='fwla-row is-'+String(l.verdict||'pass').toLowerCase();
+    const route = (ex.pickup || ('Load '+(l.load_id||''))) + (ex.drop ? (' → '+ex.drop) : '');
+    const net = ec.net_rpm_after_fuel;
+    const rate = (typeof net==='number') ? '$'+net.toFixed(2) : '—';
+    row.innerHTML =
+      `<span class="fwla-row__dot"></span>`+
+      `<span class="fwla-row__main"><span class="fwla-row__route">${esc(route)}</span>`+
+      `<span class="fwla-row__bind">${esc(l.binding_limit||'')}</span></span>`+
+      `<span class="fwla-row__rate">${rate}<small>net/tot mi</small></span>`;
+    row.onclick=()=>openOne(i);
+    list.appendChild(row);
+  });
+}
+function openOne(i){
+  const l=boardLoads[i]; if(!l) return;
+  teardown();
+  $('#card').classList.remove('is-list');
+  $('#back').classList.toggle('show', boardLoads.length>1);
+  $('#err').textContent='';
+  if(l.error_row){
+    const card=$('#card'); card.classList.remove('is-bid','is-caution','is-pass');
+    const ro=$('#readout'); ro.classList.add('is-empty'); ro.textContent='Unreadable'; $('#unit').textContent='';
+    const chip=$('#chip'); chip.textContent=l.binding_limit||'Could not read'; chip.style.visibility='visible';
+    chip.classList.remove('show'); void chip.offsetWidth; chip.classList.add('show');
+    const rb=$('#ribbon'); rb.textContent='Load '+(l.load_id||'')+' — paste this one on its own'; rb.dataset.full=l.raw_text||''; rb.classList.add('show');
+    $('#weather').innerHTML=''; return;
+  }
+  reveal(()=>render(l));
+}
+$('#back').onclick=()=>{ teardown(); reveal(()=>renderList(boardLoads, boardOrigin)); };
+
+// ── Origin / free-point controls ──────────────────────────────────────────
+$('#gpsBtn').onclick=async()=>{
+  const b=$('#gpsBtn'), t=b.textContent; b.textContent='…';
+  const g=await getGPS();
+  if(g.current_lat!=null){ gpsCoords=[g.current_lat,g.current_lon]; $('#origin').value='';
+    b.classList.add('on'); $('#curLoadBtn').classList.remove('on'); }
+  else $('#err').textContent='Location unavailable — type your start instead.';
+  b.textContent=t;
+};
+$('#curLoadBtn').onclick=async()=>{
+  const api=backend(); if(!api){ $('#err').textContent='Tap ⚙ to connect a backend.'; $('#sheet').classList.add('show'); return; }
+  const b=$('#curLoadBtn'), t=b.textContent; b.textContent='…';
+  try{
+    const headers={}; if(token() && !loopback(api)) headers['Authorization']='Bearer '+token();
+    const r=await (await fetch(api+'/api/current-load',{headers})).json();
+    if(r.drop){ $('#origin').value=r.drop; gpsCoords=null; $('#gpsBtn').classList.remove('on'); b.classList.add('on'); }
+    else $('#err').textContent='No active load found to read a drop from.';
+  }catch(e){ $('#err').textContent='Could not fetch your current load.'; }
+  b.textContent=t;
+};
+$('#origin').addEventListener('input',()=>{ gpsCoords=null; $('#gpsBtn').classList.remove('on'); $('#curLoadBtn').classList.remove('on'); });
+
 // ── Analyze ───────────────────────────────────────────────────────────────
 async function getGPS(){
   if(!navigator.geolocation) return {};
@@ -360,13 +483,23 @@ async function analyze(){
   $('#paste').classList.remove('idle');
   if(!RM){ const sc=$('#scan'); sc.classList.add('run'); setTimeout(()=>sc.classList.remove('run'),360); }
   try{
-    const gps=await getGPS();
+    const originText=$('#origin').value.trim();
+    // Precedence: GPS button coords → typed origin (no coords) → silent auto-GPS
+    const coords = gpsCoords ? {current_lat:gpsCoords[0],current_lon:gpsCoords[1]}
+                 : (originText ? {} : await getGPS());
     const headers={'Content-Type':'application/json'};
     if(token() && !loopback(api)) headers['Authorization']='Bearer '+token();
-    const resp=await fetch(api+'/api/analyze',{method:'POST',headers,body:JSON.stringify({text,...gps})});
-    const r=await resp.json();
-    if(r.error){ err.textContent=r.error; return; }
-    reveal(()=>render(r));
+    const resp=await fetch(api+'/api/analyze',{method:'POST',headers,
+      body:JSON.stringify({text, origin_text:originText, ...coords})});
+    const data=await resp.json();
+    if(data.error){ err.textContent=data.error; return; }
+    const loads = data.loads || (data.verdict ? [data] : []);
+    if(!loads.length){ err.textContent='No loads found in that text.'; return; }
+    boardLoads=loads; boardOrigin=data.origin||null;
+    if(data.origin && data.origin.unresolved)
+      err.textContent='Couldn’t find “'+data.origin.unresolved+'” — deadhead from '+(data.origin.label||'fallback')+'.';
+    if(loads.length===1){ $('#card').classList.remove('is-list'); $('#back').classList.remove('show'); reveal(()=>render(loads[0])); }
+    else { reveal(()=>renderList(loads, data.origin)); }
   }catch(e){ err.textContent='Could not reach the backend. Check ⚙ connection.'; }
   finally{ $('#go').disabled=false; $('#go').textContent='Call it'; }
 }
