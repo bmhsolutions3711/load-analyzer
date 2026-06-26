@@ -198,6 +198,21 @@ body{
 .fwla-row.is-bid .fwla-row__rate{color:var(--color-success)}
 .fwla-row.is-pass .fwla-row__rate{color:var(--color-danger)}
 .fwla-row__rate small{display:block; font-size:9px; font-weight:500; color:var(--color-fg-subtle); letter-spacing:.03em; text-transform:uppercase}
+.fwla-row__cash{display:block; font-size:12px; font-weight:600; color:var(--color-fg-dim); font-variant-numeric:tabular-nums; margin-top:1px}
+
+/* ── Cash line + broker strip (gauge detail) ──────────────────────────────── */
+.fwla-cash{display:none; font-size:13px; color:var(--color-fg-dim); font-variant-numeric:tabular-nums;
+  background:var(--color-bg-soft); border:1px solid var(--color-border); border-radius:10px; padding:9px 11px}
+.fwla-cash.show{display:block}
+.fwla-cash b{color:var(--color-fg); font-weight:700}
+.fwla-broker{display:none; align-items:center; gap:8px; flex-wrap:wrap}
+.fwla-broker.show{display:flex}
+.fwla-bname{flex:1; min-width:0; font-size:12px; color:var(--color-fg-muted);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.fwla-bcontact{flex:none; display:inline-flex; align-items:center; gap:5px; text-decoration:none;
+  font-size:12px; font-weight:600; color:var(--color-fg); background:var(--color-panel-2);
+  border:1px solid var(--color-border-bright); border-radius:999px; padding:7px 13px}
+.fwla-bcontact:active{transform:scale(.96)}
 
 /* ── Connect sheet ───────────────────────────────────────────────────────── */
 .fwla-sheet{position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-end; justify-content:center; z-index:50}
@@ -247,6 +262,8 @@ body{
 
     <div class="fwla-meta">
       <div class="fwla-weather" id="weather"></div>
+      <div class="fwla-cash" id="cash"></div>
+      <div class="fwla-broker" id="broker"></div>
       <div class="fwla-ribbon" id="ribbon"></div>
     </div>
 
@@ -391,6 +408,26 @@ function render(r){
   add(r.route.weather_drop ? '↓ '+r.route.weather_drop : '', /⚠/.test(r.route.weather_drop||''));
   (r.route.severe||[]).forEach(s=>add('⚠ '+s,true));
 
+  // cash line — plan the money (gross rate + net after costs)
+  const money = n => '$'+(Math.round(Number(n)||0)).toLocaleString();
+  const cash=$('#cash');
+  if(Number(ex.rate_usd)){
+    let c = `Load pays <b>${money(ex.rate_usd)}</b>`;
+    if(typeof ec.net==='number') c += ` · net <b>${money(ec.net)}</b> after costs`;
+    if(ec.days) c += ` · ${ec.days}d`;
+    cash.innerHTML=c; cash.classList.add('show');
+  } else cash.classList.remove('show');
+
+  // broker strip — tap to call / email
+  const broker=$('#broker'); const bname=ex.broker||'', phone=ex.contact_phone||'', email=ex.contact_email||'';
+  if(bname||phone||email){
+    const dot = ex.broker_dot ? ' · DOT '+esc(ex.broker_dot) : '';
+    let html = `<span class="fwla-bname">${esc(bname||'Broker')}${dot}</span>`;
+    if(phone) html += `<a class="fwla-bcontact" href="tel:${esc(phone.replace(/[^\d+]/g,''))}">📞 Call</a>`;
+    if(email) html += `<a class="fwla-bcontact" href="mailto:${esc(email)}">✉ Email</a>`;
+    broker.innerHTML=html; broker.classList.add('show');
+  } else broker.classList.remove('show');
+
   // choreograph: needle locks, count finishes on settle, payoff
   swingTo(v).then(()=>{ haptic(); if(v==='BID') burst(); });
   countTo(ro, Number(net));
@@ -417,11 +454,13 @@ function renderList(loads, origin){
     const route = (ex.pickup || ('Load '+(l.load_id||''))) + (ex.drop ? (' → '+ex.drop) : '');
     const net = ec.net_rpm_after_fuel;
     const rate = (typeof net==='number') ? '$'+net.toFixed(2) : '—';
+    const total = (typeof ex.rate_usd==='number' && ex.rate_usd) ? '$'+Math.round(ex.rate_usd).toLocaleString() : '';
     row.innerHTML =
       `<span class="fwla-row__dot"></span>`+
       `<span class="fwla-row__main"><span class="fwla-row__route">${esc(route)}</span>`+
       `<span class="fwla-row__bind">${esc(l.binding_limit||'')}</span></span>`+
-      `<span class="fwla-row__rate">${rate}<small>net/tot mi</small></span>`;
+      `<span class="fwla-row__rate">${rate}<small>net/tot mi</small>`+
+      (total?`<span class="fwla-row__cash">${total}</span>`:'')+`</span>`;
     row.onclick=()=>openOne(i);
     list.appendChild(row);
   });
@@ -438,7 +477,7 @@ function openOne(i){
     const chip=$('#chip'); chip.textContent=l.binding_limit||'Could not read'; chip.style.visibility='visible';
     chip.classList.remove('show'); void chip.offsetWidth; chip.classList.add('show');
     const rb=$('#ribbon'); rb.textContent='Load '+(l.load_id||'')+' — paste this one on its own'; rb.dataset.full=l.raw_text||''; rb.classList.add('show');
-    $('#weather').innerHTML=''; return;
+    $('#weather').innerHTML=''; $('#cash').classList.remove('show'); $('#broker').classList.remove('show'); return;
   }
   reveal(()=>render(l));
 }
