@@ -211,8 +211,10 @@ body{
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .fwla-bcontact{flex:none; display:inline-flex; align-items:center; gap:5px; text-decoration:none;
   font-size:12px; font-weight:600; color:var(--color-fg); background:var(--color-panel-2);
-  border:1px solid var(--color-border-bright); border-radius:999px; padding:7px 13px}
+  border:1px solid var(--color-border-bright); border-radius:999px; padding:7px 13px;
+  font-family:inherit; cursor:pointer}
 .fwla-bcontact:active{transform:scale(.96)}
+.fwla-bcontact.ok{color:var(--color-success); border-color:var(--color-success)}
 
 /* ── Connect sheet ───────────────────────────────────────────────────────── */
 .fwla-sheet{position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-end; justify-content:center; z-index:50}
@@ -304,6 +306,10 @@ const $ = s => document.querySelector(s);
 const live = { needle:null, countRAF:0, vt:null };
 let gpsCoords = null;                 // [lat,lon] set by the GPS button
 let boardLoads = [], boardOrigin = null;  // last multi-load board
+// Carrier identity for the composed booking email — served by the backend from
+// truck_specs.md (SSOT), cached so it survives page reloads.
+let carrierInfo = null;
+try{ carrierInfo = JSON.parse(localStorage.getItem('fwla_carrier')||'null'); }catch(e){}
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // ── Connection (backend URL + token) ──────────────────────────────────────
@@ -378,6 +384,27 @@ function reveal(render){
   live.vt = document.startViewTransition(render);
 }
 
+// ── Standard booking email (Bryan's carrier packet + this load) ───────────
+function composeEmail(ex, loadId){
+  const c = carrierInfo || {};
+  const lane = (ex.pickup||'?')+' → '+(ex.drop||'?');
+  const subject = (loadId ? loadId+' — ' : '')+lane+' — '+(c.company||'')+(c.mc ? ' (MC '+c.mc+')' : '');
+  const L = [];
+  L.push('Hi '+(ex.broker ? ex.broker+' team' : 'there')+',', '');
+  L.push("I'd like to book this load:", '');
+  if(loadId) L.push('Load: '+loadId);
+  L.push('Lane: '+lane);
+  if(ex.pickup_date) L.push('Pickup: '+ex.pickup_date);
+  const w = Number(ex.weight_lb)||0; if(w) L.push('Weight: '+w.toLocaleString()+' lb');
+  const rate = Number(ex.rate_usd)||0; if(rate) L.push('Rate: $'+Math.round(rate).toLocaleString()+' (as posted)');
+  if((c.equipment||[]).length){ L.push('', 'Equipment:'); c.equipment.forEach(e=>L.push('- '+e)); }
+  L.push('', "Ready to confirm — reply or call and I'll send whatever paperwork you need.", '');
+  L.push(c.name||'');
+  L.push([c.company, c.mc?'MC '+c.mc:'', c.dot?'DOT '+c.dot:''].filter(Boolean).join(' · '));
+  L.push([c.phone, c.email].filter(Boolean).join(' · '));
+  return { subject, body: L.filter((l,i,a)=>l!=='' || a[i-1]!=='').join('\n') };
+}
+
 // ── Render a verdict ──────────────────────────────────────────────────────
 function render(r){
   const card=$('#card'), v=r.verdict, ec=r.economics, ex=r.extracted;
@@ -418,14 +445,30 @@ function render(r){
     cash.innerHTML=c; cash.classList.add('show');
   } else cash.classList.remove('show');
 
-  // broker strip — tap to call / email
+  // broker strip — tap to call, or send the standard booking email (composed
+  // from the load + carrier identity served from truck_specs.md)
   const broker=$('#broker'); const bname=ex.broker||'', phone=ex.contact_phone||'', email=ex.contact_email||'';
   if(bname||phone||email){
     const dot = ex.broker_dot ? ' · DOT '+esc(ex.broker_dot) : '';
     let html = `<span class="fwla-bname">${esc(bname||'Broker')}${dot}</span>`;
     if(phone) html += `<a class="fwla-bcontact" href="tel:${esc(phone.replace(/[^\d+]/g,''))}">📞 Call</a>`;
-    if(email) html += `<a class="fwla-bcontact" href="mailto:${esc(email)}">✉ Email</a>`;
+    const msg = carrierInfo ? composeEmail(ex, r.load_id) : null;
+    if(email){
+      const href = msg ? `mailto:${esc(email)}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`
+                       : `mailto:${esc(email)}`;
+      html += `<a class="fwla-bcontact" href="${href}">✉ Email</a>`;
+    }
+    if(msg) html += `<button class="fwla-bcontact fwla-bcopy" type="button">⧉ Copy</button>`;
     broker.innerHTML=html; broker.classList.add('show');
+    const cb = broker.querySelector('.fwla-bcopy');
+    if(cb) cb.onclick = async ()=>{
+      const text = (email ? 'To: '+email+'\n' : '')+'Subject: '+msg.subject+'\n\n'+msg.body;
+      try{ await navigator.clipboard.writeText(text); }
+      catch(e){ const t=document.createElement('textarea'); t.value=text; document.body.appendChild(t);
+                t.select(); document.execCommand('copy'); t.remove(); }
+      cb.textContent='✓ Copied'; cb.classList.add('ok');
+      setTimeout(()=>{ cb.textContent='⧉ Copy'; cb.classList.remove('ok'); }, 1400);
+    };
   } else broker.classList.remove('show');
 
   // choreograph: needle locks, count finishes on settle, payoff
@@ -532,8 +575,11 @@ async function analyze(){
       body:JSON.stringify({text, origin_text:originText, ...coords})});
     const data=await resp.json();
     if(data.error){ err.textContent=data.error; return; }
+    if(data.carrier){ carrierInfo=data.carrier;
+      try{ localStorage.setItem('fwla_carrier', JSON.stringify(data.carrier)); }catch(e){} }
     const loads = data.loads || (data.verdict ? [data] : []);
     if(!loads.length){ err.textContent='No loads found in that text.'; return; }
+    if(data.note) err.textContent=data.note;
     boardLoads=loads; boardOrigin=data.origin||null;
     if(data.origin && data.origin.unresolved)
       err.textContent='Couldn’t find “'+data.origin.unresolved+'” — deadhead from '+(data.origin.label||'fallback')+'.';
