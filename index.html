@@ -295,6 +295,7 @@ body{
     <label>Token (blank for loopback)</label>
     <input id="tokInput" placeholder="LOAD_ANALYZER_TOKEN" autocomplete="off">
     <button id="saveConn">Save & connect</button>
+    <div id="build-tag" style="margin-top:10px; text-align:center; font-size:10px; color:var(--color-fg-subtle); letter-spacing:.08em">BUILD v5</div>
   </div>
 </div>
 
@@ -456,15 +457,17 @@ function render(r){
     if(email){
       const href = msg ? `mailto:${esc(email)}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`
                        : `mailto:${esc(email)}`;
-      html += `<a class="fwla-bcontact" href="${href}">✉ Email</a>`;
+      html += `<a class="fwla-bcontact fwla-bemail" href="${href}">✉ Email</a>`;
     }
     if(msg) html += `<button class="fwla-bcontact fwla-bcopy" type="button">⧉ Copy</button>`;
     broker.innerHTML=html; broker.classList.add('show');
+    const copyText = msg ? (email ? 'To: '+email+'\n' : '')+'Subject: '+msg.subject+'\n\n'+msg.body : '';
+    const eb = broker.querySelector('.fwla-bemail');
+    if(eb && msg) eb.addEventListener('click', ()=>{ try{ navigator.clipboard.writeText(copyText); }catch(e){} });
     const cb = broker.querySelector('.fwla-bcopy');
     if(cb) cb.onclick = async ()=>{
-      const text = (email ? 'To: '+email+'\n' : '')+'Subject: '+msg.subject+'\n\n'+msg.body;
-      try{ await navigator.clipboard.writeText(text); }
-      catch(e){ const t=document.createElement('textarea'); t.value=text; document.body.appendChild(t);
+      try{ await navigator.clipboard.writeText(copyText); }
+      catch(e){ const t=document.createElement('textarea'); t.value=copyText; document.body.appendChild(t);
                 t.select(); document.execCommand('copy'); t.remove(); }
       cb.textContent='✓ Copied'; cb.classList.add('ok');
       setTimeout(()=>{ cb.textContent='⧉ Copy'; cb.classList.remove('ok'); }, 1400);

@@ -1,6 +1,6 @@
 /* Load Analyzer SW — auto-update (BIK PWA standard).
    Network-first for the shell so a deploy lands immediately; never caches /api/*. */
-const CACHE = 'fwla-v4';
+const CACHE = 'fwla-v5';
 const SHELL = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
